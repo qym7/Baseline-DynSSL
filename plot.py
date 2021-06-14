@@ -5,6 +5,7 @@ if True:
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 if True:
     plt.rcParams["axes.grid"] = False
@@ -15,15 +16,17 @@ if True:
 from scipy import stats
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from sklearn.metrics import r2_score, f1_score, confusion_matrix
+from sklearn.metrics import r2_score, f1_score, confusion_matrix, balanced_accuracy_score
 
 
 def plot_PCA(folder_name, tsne=False):
     result_path = '/data/biocomp/qin/results/baseline_synthetic/' + \
                   folder_name + '/' + folder_name + '_'
-    data = np.load(result_path + 'calculation.npz')
-    frames = data['hists']
-    y_true = data['y_true']
+#     data = np.load(result_path + 'calculation.npz')
+#     frames = data['hists']
+#     y_true = data['y_true']
+    frames = np.load(result_path + 'hists.npy')
+    y_true = np.load(result_path + 'y_true.npy')
 
     if tsne:
         tsne_2 = TSNE(n_components=2, random_state=33).fit_transform(frames)
@@ -69,15 +72,47 @@ def plot_PCA(folder_name, tsne=False):
     plt.savefig(result_path + 'pca_outputs_3.png', dpi=120)
 
 
-def plot_CM(folder_name):
+def plot_CM(matrix, phases_names, plot_title, plot_path, scores):
+    plt.rcParams.update({'font.size': 20})
+    fig = plt.figure(figsize=(20, 15))
+    df_cm = pd.DataFrame(matrix, index=phases_names, columns=phases_names)
+    sns.heatmap(df_cm, annot=True, xticklabels=1, yticklabels=1)
+    plt.xlabel('predictions ordered per phases')
+    plt.ylabel('data ordered per phases')
+    plt.title(plot_title + ": {:.4f}".format(np.diag(matrix).mean()))
+    print(plot_title + "\nCM={:.4f}, acc={:.4f}, bmacc={:.4f}".format(
+                                            np.diag(matrix).mean(),
+                                            *scores))
+    fig.savefig(plot_path + '.png', format='png')
+
+
+def get_CM(y_pred, y_true):
+    acc, bmacc = get_scores(y_true, y_pred)
+    CM = confusion_matrix(y_true, y_pred,
+                          normalize='true')
+    return CM, (acc, bmacc)
+
+
+def get_scores(y_true, y_pred):
+    acc = (y_pred == y_true).astype(np.float32)
+    acc = acc.sum()/y_true.shape[0]
+    bmacc = balanced_accuracy_score(y_true, y_pred, adjusted=True)
+    return acc, bmacc
+
+
+def plot_CMs(folder_name):
     print(" ====== F1 and KENDALL ======")
     result_path = '/data/biocomp/qin/results/baseline_synthetic/' + \
-                  folder_name+'/' + folder_name + '_'
-    data = np.load(result_path + 'calculation.npz')
-    y_pred = data['y_pred']
-    y_true = data['y_true']
-    y_true_g = data['y_true_g']
-    y_pred_g = data['y_pred_g']
+                  folder_name+'/'
+    # data = np.load(result_path + 'calculation.npz')
+    # y_pred = data['y_pred']
+    # y_true = data['y_true']
+    # y_true_g = data['y_true_g']
+    # y_pred_g = data['y_pred_g']
+    y_pred = np.load(result_path + 'y_pred.npy')
+    y_true = np.load(result_path + 'y_true.npy')
+    y_pred_g = np.load(result_path + 'y_pred_g.npy')
+    y_true_g = np.load(result_path + 'y_true_g.npy')
 
     f = open(result_path + "score.txt", 'w')
     f.write("%s" % (datetime.now()))
@@ -109,39 +144,10 @@ def plot_CM(folder_name):
     tau_g = evaluate_score(y_true_g, y_pred_g, f, "GENERAL")
     f.close()
 
-    # sample_weight = Counter(y_true)
-    # sample_weight = np.array([1./float(sample_weight[p]) for p in y_true])
-    # sample_weight_g = Counter(y_true_g)
-    # sample_weight_g = np.array([1./float(sample_weight_g[p]) 
-    #                             for p in y_true_g])
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    cm = confusion_matrix(y_true, y_pred, normalize='true')
-    ax = sns.heatmap(cm, square=True)
-    ax.set_title("all result, tau = {:.4f}, acc = {:.4f}".
-                 format(tau, cm.diagonal().mean()))
-    plt.savefig(result_path + "confusion_matrix_true.png")
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    cm = confusion_matrix(y_true, y_pred, normalize='pred')
-    ax = sns.heatmap(cm, square=True)
-    ax.set_title("all result, tau = {:.4f}, acc = {:.4f}"
-                 .format(tau, cm.diagonal().mean()))
-    plt.savefig(result_path + "confusion_matrix_pred.png")
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    cm = confusion_matrix(y_true, y_pred, normalize='all')
-    ax = sns.heatmap(cm, square=True)
-    ax.set_title("all result, tau = {:.4f}, acc = {:.4f}"
-                 .format(tau, cm.diagonal().sum()))
-    plt.savefig(result_path + "confusion_matrix_all.png")
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    cm = confusion_matrix(y_true_g, y_pred_g, normalize='all')
-    ax = sns.heatmap(cm, square=True)
-    ax.set_title("all result, tau = {:.4f}, acc = {:.4f}"
-                 .format(tau_g, cm.diagonal().sum()))
-    plt.savefig(result_path + "general_confusion_matrix_pred.png")
+    CM_test, scores_test = get_CM(y_pred, y_true)
+    file_name = '{}_sup_test_nn_CM'.format(folder_name)
+    plot_CM(CM_test, np.unique(y_true)+2, 'test baseline', 
+          result_path + file_name, scores_test)
 
 
 if __name__ == '__main__':

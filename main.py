@@ -25,11 +25,11 @@ from tqdm import tqdm
 from scipy.stats import wasserstein_distance
 
 from datasets import create_datasets
-from plot import plot_PCA, plot_CM
+from plot import plot_PCA, plot_CMs
 
 
-# dist = 'norm2'
-dist = 'wasserstein'
+dist = 'norm2'
+# dist = 'wasserstein'
 label = 'pseudotime'
 model_name = "supervised_histogramme_synthetic_{}_{}".format(dist, label)
 data_type = 'synthetic'
@@ -165,16 +165,20 @@ y_pred = y_true[y_pred]
 y_true_g, y_pred_g = general_result(y_true=np.array(y_true),
                                     y_pred=np.array(y_pred), n=5)
 
-np.savez(result_path+'calculation.npz', hists=frames,
-         distance=distance, y_true=y_true, y_pred=y_pred,
-         y_true_g=y_true_g, y_pred_g=y_pred_g,
-         val_paths=[path.split('/')[-1].split('.')[0]
-                    for path in all_files_paths])
+np.save(result_path+'distance.npy', distance)
+np.save(result_path+'hists.npy', frames)
+np.save(result_path+'y_true.npy', y_true)
+np.save(result_path+'y_pred.npy', y_pred)
+np.save(result_path+'y_true_g.npy', y_true_g)
+np.save(result_path+'y_pred_g.npy', y_pred_g)
+np.save(result_path+'val_paths.npy', [path.split('/')[-1].split('.')[0]
+                          for path in all_files_paths])
+
 
 print(" ====== CONFUSION MATRIX ======")
 # CONFUSION MATRIX
 
-plot_CM(model_name)
+plot_CMs(model_name)
 
 print(" ====== t-SNE and PCA ======")
 
