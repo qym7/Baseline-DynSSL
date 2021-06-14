@@ -4,6 +4,7 @@ from skimage.transform import resize
 from tqdm import tqdm
 from memory_profiler import profile
 import numpy as np
+from multiprocessing import Pool
 
 import torch
 from torchvision import transforms
@@ -54,10 +55,8 @@ def process_texture(data, radius=1.5, sigma=20):
     return data
 
 
-def get_single_file(file_path,
-                    data_type="synthetic",
-                    label='pseudotime',
-                    supervise=None):
+def get_single_file(args):
+    file_path, data_type, label, supervise = args
     if data_type == "synthetic":
         npz = np.load(file_path)
         sequence = npz["segmentation_cell"].sum(axis=0)
@@ -118,13 +117,21 @@ def process_transparency(num_cell_pixel):
 def get_all_files(files_paths, data_type, label, supervise=None):
     sequences = []
     pattern_infos = []
-    for file_path in tqdm(files_paths, desc='loading files',
-                          total=len(files_paths)):
-        data = get_single_file(file_path, data_type, label,
-                               supervise=supervise)
-        if data[0] is not None:
-            sequences.append(data[0])
-            pattern_infos.append(data[1])
+    # for file_path in tqdm(files_paths, desc='loading files',
+    #                       total=len(files_paths)):
+    #     data = get_single_file(file_path, data_type, label,
+    #                            supervise=supervise)
+    #     if data[0] is not None:
+    #         sequences.append(data[0])
+    #         pattern_infos.append(data[1])
+    jobs = 20
+    with Pool(jobs) as p:
+        res = list(tqdm(p.imap(
+            get_single_file, [(file_path, data_type, label, supervise)
+                for file_path in files_paths]),
+                   total=len(files_paths)))
+    sequences = [res_k[0] for res_k in res if res_k[0] is not None]
+    pattern_infos = [res_k[1] for res_k in res if res_k[0] is not None]
     return [sequences,
             pattern_infos]
 
@@ -141,11 +148,6 @@ def create_datasets(all_files_paths, data_type, label, supervise=None):
     frames = frames.reshape(-1, frames.shape[-2], frames.shape[-1])
     frames = torch.cat(list(map(lambda img: process_texture(
                                             img, radius, sigma), frames)))
-    import matplotlib.pyplot as plt
-    import random
-    for i in range(20):
-        img = (frames[i*20].numpy() * 255).astype(np.uint8)
-        plt.imsave('data_example_{}.jpg'.format(i*20), img)
     frames = torch.cat(list(map(lambda img: torch.histc(torch.Tensor(img)
                        .reshape(-1), bins=256, min=0, max=1), frames)))
     frames = frames.reshape(-1, 256)

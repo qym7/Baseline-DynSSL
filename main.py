@@ -5,11 +5,12 @@ from datetime import datetime
 import sys
 if True:
     sys.path.append("..")
-import glob
 import random
 if True:
     random.seed(10)
 from multiprocessing import Pool
+from itertools import combinations, islice
+
 
 import torch
 import numpy as np
@@ -57,8 +58,9 @@ if not os.path.exists(model_path):
 with open('./settings/synthetic_val_paths.txt') as f:
     all_files_paths = f.read().splitlines()
 if test:
-    all_files_paths = all_files_paths[:10]
+    all_files_paths = all_files_paths[:3]
 print('all_files_paths', len(all_files_paths))
+
 
 frames, y_true = create_datasets(all_files_paths, data_type, label)
 print('frames are of shape', frames.shape)
@@ -78,19 +80,81 @@ else:
     n_frames = frames.shape[0]
     distance = np.zeros((n_frames, n_frames))
 
-    def calc_dist(i):
+    def calc_dist(args):
         dist = []
-        for j in range(n_frames):
-            dist.append(wasserstein_distance(frames[i], frames[j]))
-        return dist, i
+        for arg in args:
+            dist.append([wasserstein_distance(arg[0][0], arg[1][0]),
+                         arg[0][1], arg[1][1]])
+        return dist
 
-    jobs = 64
+    # def calc_dist(args):
+    #     frame_i, i, frame_j, j = args
+    #     dist = wasserstein_distance(frame_i, frame_j)
+    #     return dist, i, j
+
+    def split_every(n, iterable):
+        i = iter(iterable)
+        piece = list(islice(i, n))
+        # piece = [(frames[k[0]], k[0], frames[k[1]], k[1]) for k in piece]
+        while piece:
+            yield piece
+            piece = list(islice(i, n))
+            # piece = [(frames[k[0]], k[0], frames[k[1]], k[1]) for k in piece]
+
+    print('create iteration', frames.shape[0])
+    r = iter(combinations(zip(frames, range(frames.shape[0])), 2))
+    n = 10000
+    print('create iteration list')
+    r_lst = split_every(n, r)
+    print('begin calculation')
+    
+    jobs = 1
     with Pool(jobs) as p:
-        res = list(tqdm(p.imap(calc_dist, range(n_frames)),
-                   desc='num frames', total=n_frames))
-    all_list = np.stack(res[k][0] for k in range(len(res)))
-    all_i = np.stack(res[k][1] for k in range(len(res)))
-    distance[all_i] = all_list
+        res = list(tqdm(p.imap(calc_dist, r_lst),
+                        total=int(n_frames*(n_frames-1)/2/n)))
+    all_list = np.concatenate([[res_[j][0] for j in range(len(res_))] for res_ in res])
+    all_i = np.concatenate([[res_[j][1] for j in range(len(res_))] for res_ in res])
+    all_j = np.concatenate([[res_[j][2] for j in range(len(res_))] for res_ in res])
+    for k, (i, j) in enumerate(zip(all_i, all_j)):
+        distance[i, j] = distance[j, i] = all_list[k]
+
+    # for r_ in r_lst:
+    #     r_ = [(frames[k[0]], k[0], frames[k[1]], k[1]) for k in r_]
+    #     
+    #     jobs = 128
+    #     with Pool(jobs) as p:
+    #         res = list(tqdm(p.imap(calc_dist, r_), total=len(r_)))
+    #     all_list = np.stack([res[k][0] for k in range(len(res))])
+    #     all_i = np.stack([res[k][1] for k in range(len(res))])
+    #     all_j = np.stack([res[k][2] for k in range(len(res))])
+    #     for k, (i, j) in enumerate(zip(all_i, all_j)):
+    #         distance[i, j] = distance[j, i] = all_list[k]
+
+
+    # for i in tqdm(range(n_frames), total=n_frames):
+    #     frame_i = frames[i]
+    # def distance_i(frame_i, i):
+    #     def calc_dist(args):
+    #         frame_j, j = args
+    #         dist = wasserstein_distance(frame_i, frame_j)
+    #         return dist, j
+    #     jobs = 128
+    #     with Pool(jobs) as p:
+    #         res = list(p.imap(calc_dist, zip(frames, 
+    #                                          range(len(frames)))))
+    #     all_list = np.stack(res[k][0] for k in range(len(res)))
+    #     all_i = np.stack(res[k][1] for k in range(len(res)))
+    #     distance[i] = all_list[all_i]
+    # new_jobs = 4
+    # with Pool(new_jobs) as p:
+    #     res = list(tqdm(p.imap(distance_i, zip(frames, 
+    #                                       range(len(frames)))),
+    #                     total=n_frames)
+
+    # for i in tqdm(range(n_frames), total=n_frames):
+    #     for j in range(n_frames):
+    #         distance[i, j] = wasserstein_distance(frames[i], frames[j])
+
 
 for i in range(distance.shape[0]//51):
     distance[i*51:(i+1)*51, i*51:(i+1)*51] = np.inf
@@ -109,10 +173,6 @@ np.savez(result_path+'calculation.npz', hists=frames,
 
 print(" ====== CONFUSION MATRIX ======")
 # CONFUSION MATRIX
-# sample_weight = Counter(y_true)
-# sample_weight = np.array([1./float(sample_weight[p]) for p in y_true])
-# sample_weight_g = Counter(y_true_g)
-# sample_weight_g = np.array([1./float(sample_weight_g[p]) for p in y_true_g])
 
 plot_CM(model_name)
 

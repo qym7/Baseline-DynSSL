@@ -94,6 +94,8 @@ def plot_CM(folder_name):
         file.write(f"kendall tau = {tau}\n")
         file.write(f"p value = {p_value}\n")
         file.write(f"R squared measure = {r2_score(y1, y2)}\n")
+
+        print(f'kendall tau = {tau}\n')
         if times is not None:
             y1 = np.array(y1)
             y1_sorted = sorted(y1)
